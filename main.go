@@ -13,7 +13,6 @@ import (
 var (
 	recursiveFlag = flag.Bool("r", false, "recursive search: for directories")
 	numberingFlag = flag.Bool("n", false, "show line numbers")
-	wg            sync.WaitGroup
 )
 
 type ScanResult struct {
@@ -60,38 +59,72 @@ func exit(format string, val ...interface{}) {
 	os.Exit(1)
 }
 
-func processFile(fpath string, pattern string, numbering bool) {
+func processFile(fpath string, pattern string) []ScanResult {
 	result, _, err := scanFile(fpath, pattern)
 	if err != nil {
 		exit("Error scanning %s: %s", fpath, err.Error())
 	}
-	if numbering {
-		for _, res := range result {
-			fmt.Printf("%s:%d : %s\n", res.file, res.lineNumber, res.line)
-			//fmt.Printf("%s:%d : %s\n", fpath, lines[i], line)
-		}
-	} else {
-		for _, res := range result {
-			fmt.Printf("%s: %s\n", res.file, res.line)
-		}
-	}
-	wg.Done()
+	return result
 }
 
-func processDirectory(dir string, pattern string, numbering bool) {
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			fmt.Println(err)
-			return err
-		}
-		if !info.IsDir() {
+func processDirectory(dir string, pattern string) (chan ScanResult, chan error) {
+	res := make(chan ScanResult)
+	errc := make(chan error, 1)
+	go func() {
+		var wg sync.WaitGroup
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
 			wg.Add(1)
-			go processFile(dir+info.Name(), pattern, numbering)
-		}
-
+			go func() {
+				data := processFile(dir+info.Name(), pattern)
+				for _, el := range data {
+					res <- el
+				}
+				wg.Done()
+			}()
+			return nil
+		})
+		errc <- err
 		wg.Wait()
-		return nil
-	})
+		close(res)
+	}()
+	return res, errc
+}
+func printFile(data []ScanResult, numbering bool) {
+	for _, d := range data {
+		if numbering {
+			fmt.Printf("%s:%d : %s\n", d.file, d.lineNumber, d.line)
+		} else {
+			fmt.Printf("%s: %s\n", d.file, d.line)
+		}
+	}
+}
+
+func printDir(data chan ScanResult, numbering bool) {
+	// if numbering {
+	// 	for _, res := range result {
+	// 		fmt.Printf("%s:%d : %s\n", res.file, res.lineNumber, res.line)
+	// 		//fmt.Printf("%s:%d : %s\n", fpath, lines[i], line)
+	// 	}
+	// } else {
+	// 	for _, res := range result {
+	// 		fmt.Printf("%s: %s\n", res.file, res.line)
+	// 	}
+	// }
+	for el := range data {
+		if numbering {
+			fmt.Printf("%s:%d : %s\n", el.file, el.lineNumber, el.line)
+		} else {
+			fmt.Printf("%s: %s\n", el.file, el.line)
+		}
+	}
+
 }
 
 func main() {
@@ -115,8 +148,10 @@ func main() {
 	}
 
 	if info.IsDir() && recursive {
-		processDirectory(path, pattern, *numberingFlag)
+		data, _ := processDirectory(path, pattern)
+		printDir(data, *numberingFlag)
 	} else {
-		processFile(path, pattern, *numberingFlag)
+		data := processFile(path, pattern)
+		printFile(data, *numberingFlag)
 	}
 }
