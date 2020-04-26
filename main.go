@@ -107,16 +107,6 @@ func printFile(data []ScanResult, numbering bool) {
 }
 
 func printDir(data chan ScanResult, numbering bool) {
-	// if numbering {
-	// 	for _, res := range result {
-	// 		fmt.Printf("%s:%d : %s\n", res.file, res.lineNumber, res.line)
-	// 		//fmt.Printf("%s:%d : %s\n", fpath, lines[i], line)
-	// 	}
-	// } else {
-	// 	for _, res := range result {
-	// 		fmt.Printf("%s: %s\n", res.file, res.line)
-	// 	}
-	// }
 	for el := range data {
 		if numbering {
 			fmt.Printf("%s:%d : %s\n", el.file, el.lineNumber, el.line)
